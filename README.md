@@ -11,46 +11,23 @@ Fine-tuned text-to-speech for the Nepali language, based on the **Chatterbox-Mul
 * **Clean Inference**: Dedicated Gradio UI and test scripts for rapid experimentation.
 
 ## 📦 Model Files
-Due to size restrictions (2.1 GB), the fine-tuned model weights are hosted on Hugging Face:
-- **Final Model (`.safetensors`)**: [your-huggingface-url-here/t3_mtl_nepali_final.safetensors]
-- **Resume Checkpoint (`.pt`)**: [your-huggingface-url-here/t3_nepali_epoch_45.pt]
+To ensure repository performance, large model files are hosted on Hugging Face:
+- **Repo Link**: [https://huggingface.co/officialuser/chatterbox-nepali](https://huggingface.co/officialuser/chatterbox-nepali)
 
-*Place these files in the root of the repository to get started.*
+| File | Purpose | Recommendation |
+| :--- | :--- | :--- |
+| `t3_mtl_nepali_final.safetensors` | **Production Weights** | Use for **fast, optimized inference** and production use. |
+| `t3_nepali_epoch_20.pt` | **Training Checkpoint** | Use as a starting point to **train further** on your own dataset. |
 
-## ⚙️ Installation
-```bash
-conda create -n chatterbox_ne python=3.11
-conda activate chatterbox_ne
+*Place these files in the root folder of this repository after downloading.*
 
-# Clone and install dependencies
-git clone https://github.com/officialuser/chatterbox-nepali.git
-cd chatterbox-nepali
-pip install -e .
-```
+---
 
-## 🎙️ Inference & Usage
-
-### 1. Web UI (Gradio)
-Launch a graphical interface for easy generation:
-```bash
-python3 gradio_nepali.py
-```
-
-### 2. Command Line Test
-Quickly test a specific checkpoint on a long sentence:
-```bash
-python3 test_nepali.py \
-  --checkpoint "t3_mtl_nepali_final.safetensors" \
-  --ref_audio "path/to/nepali_ref.wav" \
-  --text "तपाईंलाई कस्तो छ? यो मेरो नयाँ नेपाली एआई मोडल हो।" \
-  --output "output.wav"
-```
-
-## 🏋️ Training / Fine-tuning
-If you want to continue training the model or fine-tune it on your own dataset:
+## 🏋️ Training Further (Fine-tuning)
+You are encouraged to push the model even further! To start training from the current Nepali base:
 
 1. **Prepare Data**: Place your `.wav` files and a `metadata.csv` (format: `file|text`) in `data/nepali/`.
-2. **Launch Training**:
+2. **Resume Training**:
 ```bash
 export PYTHONPATH=src
 python3 src/chatterbox/train_nepali.py \
@@ -58,16 +35,51 @@ python3 src/chatterbox/train_nepali.py \
   --device mps \
   --batch_size 4 \
   --accum_steps 4 \
-  --epochs 50 \
+  --epochs 100 \
   --save_every 5 \
-  --resume_t3_weights "t3_nepali_epoch_45.pt"
+  --resume_t3_weights "t3_nepali_epoch_20.pt"
+```
+*When your training reaches the target epoch limit, the script will automatically consolidate your weights into a single optimized file: **`t3_mtl_nepali_final.safetensors`**. Please share this file back with the community!*
+
+---
+
+## 🎙️ Inference & Implementation
+
+### 🛡️ Faster Generation (Safetensors)
+Using the `.safetensors` format is significantly **faster** and more secure than standard `.pt` files. Use the following code to generate audio from your final model:
+
+```python
+import torchaudio as ta
+from chatterbox.mtl_tts import ChatterboxMultilingualTTS
+from safetensors.torch import load_file
+
+# Load optimized Multilingual Wrapper
+model = ChatterboxMultilingualTTS.from_pretrained(device="mps")
+
+# Patch in your local Nepali weights
+weights = load_file("t3_mtl_nepali_final.safetensors", device="mps")
+cleaned_weights = {k.replace("patched_model.", "").replace("model.", ""): v for k, v in weights.items()}
+model.t3.load_state_dict(cleaned_weights, strict=False)
+
+# Synthesize Nepali
+text = "नमस्ते, म नेपाली एआई एजेन्ट हुँ। म तपाईंसँग कुरा गर्न तयार छु।"
+wav = model.generate(text, language_id="ne", audio_prompt_path="reference.wav")
+
+ta.save("nepali_output.wav", wav, model.sr)
 ```
 
-## 🛠️ Important Fixes
-This fork includes critical fixes for the Nepali language that are **not** present in the upstream repo:
-* **Causal Shift Fix**: Corrected the autoregressive loss function in `t3.py` to prevent "garbage" output during fine-tuning.
-* **Tokenizer Fix**: Prevented double-stacking of language tags (`[ne]`) when processing Nepali strings.
-* **Alignment Safety Fix**: Relaxed the repetition analyzer in `alignment_stream_analyzer.py` from 2 tokens (too strict for Nepali vowels) to 15 tokens (~600ms) to prevent early audio cutoffs.
+### 🏮 Web UI (Gradio)
+Launch a graphical interface to test voices instantly:
+```bash
+# Automatically loads t3_mtl_nepali_final.safetensors if present
+python3 gradio_nepali.py
+```
+
+## 🛠️ Critical Bug Fixes (Patched in this Fork)
+This fork includes essential fixes for Devanagari that are **not available** upstream:
+* **Causal Shift Fix**: Fixed the next-token prediction loss in `t3.py`.
+* **Tokenizer Logic**: Prevented double-prepending of `[ne]` tags.
+* **Alignment Safety**: Increased repetition tolerance from 2 tokens (too aggressive for long vowels) to 15 tokens (~600ms) in `alignment_stream_analyzer.py` to stop early audio cutoffs.
 
 ## 📄 License & Credits
 * Original architecture by **Resemble AI**.
