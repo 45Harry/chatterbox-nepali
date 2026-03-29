@@ -45,7 +45,10 @@ This project encourages you to build the final model weights yourself! When you 
 
 ### How to Resume Training:
 ```bash
+# Make sure your environment is active
+conda activate chatterbox_ne
 export PYTHONPATH=src
+
 python3 src/chatterbox/train_nepali.py \
   --manifest data/nepali/metadata.csv \
   --device mps \
@@ -79,6 +82,10 @@ python3 test_nepali.py \
 #### Using Final Weights (.safetensors):
 Once you have trained the model and produced the `.safetensors` file, the command is the same:
 ```bash
+# Make sure your environment is active
+conda activate chatterbox_ne
+export PYTHONPATH=src
+
 python3 test_nepali.py \
   --checkpoint "t3_mtl_nepali_final.safetensors" \
   --ref_audio "data/nepali/wavs/nep_sample.wav" \
@@ -90,6 +97,10 @@ python3 test_nepali.py \
 Launch a graphical interface to test voices instantly:
 ```bash
 # Automatically detects and loads local Nepali weights
+# Make sure your environment is active
+conda activate chatterbox_ne
+export PYTHONPATH=src
+
 python3 gradio_nepali.py
 ```
 
