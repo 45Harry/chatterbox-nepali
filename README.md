@@ -64,6 +64,9 @@ python3 test_nepali.py \
   --output "nepali_test_output.wav"
 ```
 
+> [!NOTE]
+> The file **`nepali_test_output.wav`** in the root of this repository was generated using the command above. For testing emotional expressiveness and paralinguistic control, we recommend using the **Gradio Interface**. Note: The current Gradio script is optimized for the final `.safetensors` model; you can modify `gradio_nepali.py` if you wish to host a raw `.pt` checkpoint instead.
+
 ### 🏮 Web UI (Gradio)
 Launch a graphical interface to test voices instantly. It will automatically detect and load your local Nepali weights:
 ```bash
