@@ -38,49 +38,45 @@ python3 src/chatterbox/train_nepali.py \
   --resume_t3_weights "t3_nepali_epoch_20.pt"
 ```
 
-Once your `.safetensors` is generated, it will enable **Faster Inference** and significantly smaller file sizes.
-
 ---
 
 ## 🎙️ Inference & Implementation
 
-### 🛡️ Quick Testing (Using Checkpoint)
-For rapid audio generation and proof-of-concept testing using the current checkpoint, run the following:
+### 🛡️ Quick Testing
+To generate Nepali speech correctly using the custom logic in this repository, you **must** use the provided test scripts. Standard library imports from Hugging Face will not support Devanagari without these specific patches.
 
+#### Using a Checkpoint (.pt):
 ```bash
 # Make sure your environment is active
 conda activate chatterbox_ne
 export PYTHONPATH=src
 
-# Run the test script
 python3 test_nepali.py \
   --checkpoint "t3_nepali_epoch_20.pt" \
   --ref_audio "data/nepali/wavs/nep_sample.wav" \
   --text "इन्द्रेणी वा इन्द्रधनुष प्रकाश र रंगबाट उत्पन्न भएको यस्तो घटना हो जसमा रंगीन प्रकाशको एउटा अर्धवृत आकाशमा देखिन्छ। जब सूर्यको प्रकाश पृथ्वीको वायुमण्डलमा भएको पानीको थोपा माथि पर्छ, पानीको थोपाले प्रकाशलाई परावर्तन, आवर्तन र डिस्पर्सन गर्दछ।" \
-  --output "my_first_nepali_test.wav"
+  --output "nepali_test.wav"
 ```
 
-### 🏮 Custom Implementation (Safetensors)
-After you have successfully trained your model and generated a `.safetensors` file, you can integrate it into your own apps with this optimized code:
+#### Using Final Weights (.safetensors):
+Once you have trained the model and produced the `.safetensors` file, the command is the same:
+```bash
+python3 test_nepali.py \
+  --checkpoint "t3_mtl_nepali_final.safetensors" \
+  --ref_audio "data/nepali/wavs/nep_sample.wav" \
+  --text "तपाईंको नयाँ नेपाली एआई तयार छ।" \
+  --output "final_output.wav"
+```
 
-```python
-import torchaudio as ta
-from chatterbox.mtl_tts import ChatterboxMultilingualTTS
-from safetensors.torch import load_file
-
-model = ChatterboxMultilingualTTS.from_pretrained(device="mps")
-
-# Loading your custom safetensors is faster than .pt checkpoints!
-weights = load_file("t3_mtl_nepali_final.safetensors", device="mps")
-cleaned_weights = {k.replace("patched_model.", "").replace("model.", ""): v for k, v in weights.items()}
-model.t3.load_state_dict(cleaned_weights, strict=False)
-
-wav = model.generate("तपाईंलाई कस्तो छ?", language_id="ne", audio_prompt_path="reference.wav")
-ta.save("final_output.wav", wav, model.sr)
+### 🏮 Web UI (Gradio)
+Launch a graphical interface to test voices instantly:
+```bash
+# Automatically detects and loads local Nepali weights
+python3 gradio_nepali.py
 ```
 
 ## 🛠️ Critical Bug Fixes (Patched in this Fork)
-This fork includes essential fixes for Devanagari that are **not available** upstream:
+This fork includes essential fixes for Devanagari that are **not available** in the original repository:
 * **Causal Shift Fix**: Fixed the next-token prediction loss in `t3.py`.
 * **Tokenizer Logic**: Prevented double-prepending of `[ne]` tags.
 * **Alignment Safety**: Increased repetition tolerance in `alignment_stream_analyzer.py` to stop early audio cutoffs on long Nepali vowels.
