@@ -241,10 +241,10 @@ class T3(nn.Module):
         # Calc CCE losses
         IGNORE_ID = -100
         device = out.text_logits.device
-        mask_text = torch.arange(len_text, device=device)[None] >= text_token_lens[:, None]  # (B, len_text)
-        mask_speech = torch.arange(len_speech, device=device)[None] >= speech_token_lens[:, None]  # (B, len_speech)
-        masked_text = text_tokens.masked_fill(mask_text, IGNORE_ID)
-        masked_speech = speech_tokens.masked_fill(mask_speech, IGNORE_ID)
+        mask_text = torch.arange(len_text, device=device)[None] >= text_token_lens[:, None].to(device)  # (B, len_text)
+        mask_speech = torch.arange(len_speech, device=device)[None] >= speech_token_lens[:, None].to(device)  # (B, len_speech)
+        masked_text = text_tokens.to(torch.long).masked_fill(mask_text, IGNORE_ID)
+        masked_speech = speech_tokens.to(torch.long).masked_fill(mask_speech, IGNORE_ID)
         # Apply causal shift for next-token prediction
         shift_text_logits = out.text_logits[:, :-1, :].contiguous()
         shift_text_labels = masked_text[:, 1:].contiguous()

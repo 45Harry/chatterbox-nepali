@@ -3,6 +3,10 @@ import argparse
 import os
 import json
 from pathlib import Path
+import torch.multiprocessing as mp
+
+# Fix librosa multiprocessing issue
+mp.set_start_method('spawn', force=True)
 
 import torch
 import torch.nn.functional as F
@@ -61,7 +65,7 @@ class NepaliDataset(Dataset):
 
     def __getitem__(self, idx):
         item = self.data[idx]
-        audio_path = item['audio_path']
+        audio_path = item.get('audio_path') or item.get('audio')
         text = item['text']
 
         # Do NOT prepend [START] in text since MTLTokenizer adds [ne] as prefix to the text.
@@ -97,13 +101,13 @@ def collate_fn(batch):
     text_tokens = [item['text_tokens'] for item in batch]
     speech_tokens = [item['speech_tokens'] for item in batch]
     speaker_embs = [item['speaker_emb'] for item in batch]
-    
-    text_token_lens = torch.tensor([len(t) for t in text_tokens])
-    speech_token_lens = torch.tensor([len(s) for s in speech_tokens])
-    
+
+    text_token_lens = torch.tensor([len(t) for t in text_tokens], dtype=torch.long)
+    speech_token_lens = torch.tensor([len(s) for s in speech_tokens], dtype=torch.long)
+
     # Pad sequences
-    text_tokens_padded = torch.nn.utils.rnn.pad_sequence(text_tokens, batch_first=True, padding_value=0)
-    speech_tokens_padded = torch.nn.utils.rnn.pad_sequence(speech_tokens, batch_first=True, padding_value=6562) # stop_speech_token
+    text_tokens_padded = torch.nn.utils.rnn.pad_sequence(text_tokens, batch_first=True, padding_value=0).long()
+    speech_tokens_padded = torch.nn.utils.rnn.pad_sequence(speech_tokens, batch_first=True, padding_value=6562).long() # stop_speech_token
     
     speaker_embs = torch.cat(speaker_embs, dim=0)
     
@@ -228,52 +232,11 @@ def train(args):
             if i % 10 == 0 and device.type == "mps":
                 torch.mps.empty_cache()
             
-        # Save checkpoint and generate sample
+        # Save checkpoint (skip validation sample generation to avoid CUDA crashes)
         if epoch % args.save_every == 0:
             ckpt_path = f"t3_nepali_epoch_{epoch}.pt"
             torch.save(t3.state_dict(), ckpt_path)
-            
-            # --- VALIDATION SAMPLE GENERATION ---
-            print(f"\n📊 Generating validation sample for epoch {epoch}...")
-            t3.eval()
-            with torch.no_grad():
-                test_text = "नमस्ते, म नेपाली बोलिरहेको छु। यो तालिम कस्तो चलिरहेको छ?"
-                
-                # Device switch: move encoders back to GPU for inference
-                model_wrapper.s3gen.tokenizer.to(device)
-                model_wrapper.ve.to(device)
-                
-                try:
-                    # We reuse the model_wrapper's high-level generate logic
-                    old_t3 = model_wrapper.t3
-                    model_wrapper.t3 = t3 
-                    
-                    val_wav = model_wrapper.generate(
-                        test_text, 
-                        language_id="ne", 
-                        audio_prompt_path=args.eval_audio_path,
-                        exaggeration=0.5,
-                        temperature=0.8
-                    )
-                    
-                    samples_dir = Path("samples")
-                    samples_dir.mkdir(exist_ok=True)
-                    output_sample_path = samples_dir / f"sample_epoch_{epoch}.wav"
-                    
-                    import torchaudio
-                    torchaudio.save(str(output_sample_path), val_wav, model_wrapper.sr)
-                    print(f"✅ Sample saved to {output_sample_path}")
-                    
-                    model_wrapper.t3 = old_t3
-                except Exception as e:
-                    print(f"⚠️ Could not generate sample: {e}")
-                finally:
-                    # Device switch back: move encoders to CPU for next epoch data loading
-                    model_wrapper.s3gen.tokenizer.cpu()
-                    model_wrapper.ve.cpu()
-            
-            t3.train()
-            # -----------------------------------
+            print(f"✅ Checkpoint saved: {ckpt_path}")
     # Safetensors errors out if shared memory pointers exist. 
     # Because 'patched_model' is a duplicated reference specifically made for the generate validation loop, it crashes. We strip it!
     final_sd = {k: v for k, v in t3.state_dict().items() if not k.startswith("patched_model.")}

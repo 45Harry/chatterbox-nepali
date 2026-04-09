@@ -152,3 +152,12 @@ This fork includes essential fixes for Devanagari that are **not available** in 
 * Fine-tuning and Nepali optimization by **officialuser**.
 * Reference Audio in samples by **Achyut Ghimire (Bulbul)**.
 * Distributed under the **MIT License**.
+
+
+
+python3 src/chatterbox/train_nepali.py \
+  --manifest data/nepali/manifest.jsonl \
+  --epochs 50 \
+  --batch_size 16 \
+  --device cuda
+
