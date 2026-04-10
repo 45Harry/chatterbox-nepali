@@ -153,18 +153,20 @@ def train(args):
     # For data loading, we keep feature extractors strictly on CPU
     s3_tokenizer = model_wrapper.s3gen.tokenizer.cpu()
     voice_encoder = model_wrapper.ve.cpu()
-    
+
     # OPTIMIZATION: Initialize [ne] (Nepali) tag from [hi] (Hindi) tag
     # This prevents the initial gibberish by starting with a related language!
+    # Only do this when starting fresh (not resuming), since resumed weights are already tuned.
     hi_idx = 722
     ne_idx = 2454
-    with torch.no_grad():
-        if t3.text_emb.weight.shape[0] > ne_idx:
-            print(f"🎯 Initializing [ne] tag ({ne_idx}) weights from [hi] tag ({hi_idx})...")
-            # 1. Update Embedding
-            t3.text_emb.weight[ne_idx] = t3.text_emb.weight[hi_idx].clone()
-            # 2. Update Prediction Head
-            t3.text_head.weight[ne_idx] = t3.text_head.weight[hi_idx].clone()
+    if not args.resume_t3_weights:
+        with torch.no_grad():
+            if t3.text_emb.weight.shape[0] > ne_idx:
+                print(f"🎯 Initializing [ne] tag ({ne_idx}) weights from [hi] tag ({hi_idx})...")
+                # 1. Update Embedding
+                t3.text_emb.weight[ne_idx] = t3.text_emb.weight[hi_idx].clone()
+                # 2. Update Prediction Head
+                t3.text_head.weight[ne_idx] = t3.text_head.weight[hi_idx].clone()
     
     t3.train()
     
@@ -234,14 +236,16 @@ def train(args):
             
         # Save checkpoint (skip validation sample generation to avoid CUDA crashes)
         if epoch % args.save_every == 0:
-            ckpt_path = f"t3_nepali_epoch_{epoch}.pt"
+            os.makedirs("results", exist_ok=True)
+            ckpt_path = f"results/t3_nepali_epoch_{epoch}.pt"
             torch.save(t3.state_dict(), ckpt_path)
             print(f"✅ Checkpoint saved: {ckpt_path}")
-    # Safetensors errors out if shared memory pointers exist. 
+    # Safetensors errors out if shared memory pointers exist.
     # Because 'patched_model' is a duplicated reference specifically made for the generate validation loop, it crashes. We strip it!
     final_sd = {k: v for k, v in t3.state_dict().items() if not k.startswith("patched_model.")}
-    save_file(final_sd, "t3_mtl_nepali_final.safetensors")
-    print("Training finished. Saved to t3_mtl_nepali_final.safetensors")
+    os.makedirs("results", exist_ok=True)
+    save_file(final_sd, "results/t3_mtl_nepali_final.safetensors")
+    print("Training finished. Saved to results/t3_mtl_nepali_final.safetensors")
 
 if __name__ == "__main__":
     def get_default_device():

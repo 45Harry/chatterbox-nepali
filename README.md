@@ -39,7 +39,15 @@ cd chatterbox-nepali
 
 # 3. Install dependencies in editable mode
 pip install -e .
+
+# 4. (Optional) For GPU training with CUDA, reinstall PyTorch with GPU support:
+#    PyPI doesn't host CUDA-enabled wheels by default, so install from the CUDA index:
+pip uninstall -y torch torchaudio
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
 ```
+
+> [!NOTE]
+> Updated `pyproject.toml` to use `torch>=2.11.0` and `torchaudio>=2.11.0` for Python < 3.14.
 
 ---
 

@@ -33,7 +33,11 @@ def generate(args):
 
     # Load our custom checkpoint
     print(f"🔄 Applying custom weights from {args.checkpoint}...")
-    state_dict = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
+    if args.checkpoint.endswith(".safetensors"):
+        from safetensors.torch import load_file as load_safetensors
+        state_dict = load_safetensors(args.checkpoint, device="cpu")
+    else:
+        state_dict = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
     # Clean keys if needed
     cleaned = {k.replace("patched_model.", "").replace("model.", ""): v for k, v in state_dict.items()}
     model_wrapper.t3.load_state_dict(cleaned, strict=False)
