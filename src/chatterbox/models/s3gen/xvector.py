@@ -46,10 +46,14 @@ def extract_feature(audio):
     features = []
     feature_times = []
     feature_lengths = []
+    device = audio[0].device
     for au in audio:
-        feature = Kaldi.fbank(au.unsqueeze(0), num_mel_bins=80)
+        # fbank uses torch.fft.rfft which triggers NVRTC JIT failure on Blackwell GPUs.
+        # Run on CPU and move back to original device.
+        au_cpu = au.cpu()
+        feature = Kaldi.fbank(au_cpu.unsqueeze(0), num_mel_bins=80)
         feature = feature - feature.mean(dim=0, keepdim=True)
-        features.append(feature)
+        features.append(feature.to(device))
         feature_times.append(au.shape[0])
         feature_lengths.append(feature.shape[0])
     # padding for batch inference

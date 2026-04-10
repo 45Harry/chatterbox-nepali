@@ -150,19 +150,20 @@ class S3Tokenizer(S3TokenizerV2):
         if not torch.is_tensor(audio):
             audio = torch.from_numpy(audio)
 
-        audio = audio.to(self.device)
+        device = audio.device
+        audio = audio.cpu()
         if padding > 0:
             audio = F.pad(audio, (0, padding))
         stft = torch.stft(
             audio, self.n_fft, S3_HOP,
-            window=self.window.to(self.device),
+            window=self.window.cpu(),
             return_complex=True
         )
         magnitudes = stft[..., :-1].abs()**2
 
-        mel_spec = self._mel_filters.to(self.device) @ magnitudes
+        mel_spec = self._mel_filters.cpu() @ magnitudes
 
         log_spec = torch.clamp(mel_spec, min=1e-10).log10()
         log_spec = torch.maximum(log_spec, log_spec.max() - 8.0)
         log_spec = (log_spec + 4.0) / 4.0
-        return log_spec
+        return log_spec.to(device)

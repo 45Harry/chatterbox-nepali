@@ -121,13 +121,13 @@ conda activate chatterbox_ne
 export PYTHONPATH=src
 
 python3 src/chatterbox/train_nepali.py \
-  --manifest data/nepali/metadata.csv \
-  --device mps \
+  --manifest data/nepali/manifest.jsonl \
+  --device cuda \
   --batch_size 4 \
   --accum_steps 4 \
   --epochs 50 \
   --save_every 5 \
-  --resume_t3_weights "t3_nepali_epoch_20.pt"
+  --resume_t3_weights results/t3_nepali_epoch_45.pt
 ```
 
 ---
@@ -157,8 +157,8 @@ This fork includes essential fixes for Devanagari that are **not available** in 
 
 ## 📄 License & Credits
 * Original architecture by **Resemble AI**.
-* Fine-tuning and Nepali optimization by **officialuser**.
-* Reference Audio in samples by **Achyut Ghimire (Bulbul)**.
+* Fine-tuning and Nepali optimization by **Harry & Team**.
+* Reference Audio in samples by **Khusiyali Moktan**.
 * Distributed under the **MIT License**.
 
 
