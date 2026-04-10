@@ -4,10 +4,10 @@ Nepali TTS inference script using a custom checkpoint.
 
 Usage:
     python3 test_nepali.py \
-      --checkpoint base_model/t3_nepali_epoch_20.pt \
+      --checkpoint results/t3_mtl_nepali_final.safetensors \
       --ref_audio samples/ref.wav \
       --text "नमस्ते, म टेलभोक्सको आवाज बोल्दै छु। टेलभोक्सले तपाईंको व्यवसायको लागि स्मार्ट, प्राविधिक र भरपर्दो समाधान ल्याउँछ।" \
-      --output test_output3.wav
+      --output output_audio/test_output7.wav
 """
 import argparse
 import os
@@ -68,7 +68,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Nepali TTS Inference")
     parser.add_argument("--checkpoint", type=str, required=True, help="Path to t3_nepali_epoch_X.pt")
     parser.add_argument("--ckpt_dir", type=str, help="Path to base pretrained model dir")
-    parser.add_argument("--ref_audio", type=str, required=True, help="Reference audio for voice cloning")
+    parser.add_argument("--ref_audio", type=str, required=False, help="Reference audio for voice cloning")
     parser.add_argument("--text", type=str, required=True, help="Nepali text to synthesize")
     parser.add_argument("--output", type=str, default="output.wav", help="Output WAV path")
     parser.add_argument("--device", type=str, default=get_default_device())
@@ -77,3 +77,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     generate(args)
+
+
+ 
