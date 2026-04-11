@@ -128,7 +128,8 @@ class AlignmentStreamAnalyzer:
             self.started_at = T
 
         # Is generation likely complete?
-        self.complete = self.complete or self.text_position >= S - 6
+        # FIX for Nepali: Increased buffer from 6 to 10 tokens to prevent early termination
+        self.complete = self.complete or self.text_position >= S - 10
         if self.complete and self.completed_at is None:
             self.completed_at = T
 
@@ -137,10 +138,12 @@ class AlignmentStreamAnalyzer:
         last_text_token_duration = A[15:, -6:].sum()
 
         # Activations for the final token that last too long are likely hallucinations.
-        long_tail = self.complete and (A[self.completed_at:, -6:].sum(dim=0).max() >= 5) # 200ms
+        # FIX for Nepali: Increased threshold from 5 to 8 to prevent premature EOS
+        long_tail = self.complete and (A[self.completed_at:, -6:].sum(dim=0).max() >= 8) # 200ms
 
         # If there are activations in previous tokens after generation has completed, assume this is a repetition error.
-        alignment_repetition = self.complete and (A[self.completed_at:, :-7].max(dim=1).values.sum() > 5)
+        # FIX for Nepali: Increased threshold from 5 to 8
+        alignment_repetition = self.complete and (A[self.completed_at:, :-7].max(dim=1).values.sum() > 8)
         
         # Track generated tokens for repetition detection
         if next_token is not None:
@@ -151,15 +154,16 @@ class AlignmentStreamAnalyzer:
                 token_id = next_token
             self.generated_tokens.append(token_id)
 
-            # Keep only last 20 tokens to prevent memory issues
-            if len(self.generated_tokens) > 20:
-                self.generated_tokens = self.generated_tokens[-20:]
+            # Keep only last 30 tokens to prevent memory issues
+            if len(self.generated_tokens) > 30:
+                self.generated_tokens = self.generated_tokens[-30:]
 
-        # Check for excessive token repetition (15x same token in a row)
-        # 15 tokens at 25Hz = ~600ms of a single robotic continuous tone.
+        # Check for excessive token repetition (20x same token in a row)
+        # 20 tokens at 25Hz = ~800ms of a single robotic continuous tone.
+        # FIX for Nepali: Increased from 15 to 20 to be more lenient
         token_repetition = (
-            len(self.generated_tokens) >= 15 and
-            len(set(self.generated_tokens[-15:])) == 1
+            len(self.generated_tokens) >= 20 and
+            len(set(self.generated_tokens[-20:])) == 1
         )
         
         if token_repetition:

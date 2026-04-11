@@ -284,6 +284,8 @@ class T3(nn.Module):
         Args:
             text_tokens: a 1D (unbatched) or 2D (batched) tensor.
         """
+        import time
+        _t0 = time.time()
         # Validate / sanitize inputs
         assert prepend_prompt_speech_tokens is None, "not implemented"
         _ensure_BOT_EOT(text_tokens, self.hp)
@@ -309,6 +311,7 @@ class T3(nn.Module):
         # TODO? synchronize the expensive compile function
         # with self.compile_lock:
         if not self.compiled:
+            logger.info(f"⏱️ [T3] Building patched model... ({time.time()-_t0:.2f}s)")
             # Default to None for English models, only create for multilingual
             alignment_stream_analyzer = None
             if self.hp.is_multilingual:
@@ -319,7 +322,7 @@ class T3(nn.Module):
                     alignment_layer_idx=9, # TODO: hparam or something?
                     eos_idx=self.hp.stop_speech_token,
                 )
-                assert alignment_stream_analyzer.eos_idx == self.hp.stop_speech_token
+                logger.info(f"⏱️ [T3] Alignment analyzer built ({time.time()-_t0:.2f}s)")
 
             patched_model = T3HuggingfaceBackend(
                 config=self.cfg,
@@ -330,6 +333,7 @@ class T3(nn.Module):
             )
             self.patched_model = patched_model
             self.compiled = True
+            logger.info(f"⏱️ [T3] Patched model compiled ({time.time()-_t0:.2f}s)")
 
         # # Run normal generate method, which calls our custom extended methods
         # return self.patched_model.generate(
@@ -369,6 +373,8 @@ class T3(nn.Module):
         min_p_warper = MinPLogitsWarper(min_p=min_p)
         top_p_warper = TopPLogitsWarper(top_p=top_p)
         repetition_penalty_processor = RepetitionPenaltyLogitsProcessor(penalty=float(repetition_penalty))
+
+        logger.info(f"⏱️ [T3] Starting generation loop ({time.time()-_t0:.2f}s)")
 
         # ---- Initial Forward Pass (no kv_cache yet) ----
         output = self.patched_model(
@@ -443,6 +449,8 @@ class T3(nn.Module):
 
         # Concatenate all predicted tokens along the sequence dimension.
         predicted_tokens = torch.cat(predicted, dim=1)  # shape: (B, num_tokens)
+        
+        logger.info(f"⏱️ [T3] Total inference time: {time.time()-_t0:.2f}s, generated {predicted_tokens.shape[1]} tokens")
         return predicted_tokens
 
     @torch.inference_mode()
