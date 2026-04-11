@@ -184,5 +184,14 @@ class AlignmentStreamAnalyzer:
             logits = -(2**15) * torch.ones_like(logits)
             logits[..., self.eos_idx] = 2**15
 
+        # FIX for Nepali: Force EOS after text completion to prevent post-text babbling
+        # Once text is complete and ~50 more frames (~2s) are generated, stop
+        if self.complete and self.completed_at is not None:
+            frames_since_complete = T - self.completed_at
+            if frames_since_complete >= 50:
+                logger.info(f"🏁 Forcing EOS: text complete {frames_since_complete} frames ago ({frames_since_complete/25:.1f}s)")
+                logits = -(2**15) * torch.ones_like(logits)
+                logits[..., self.eos_idx] = 2**15
+
         self.curr_frame_pos += 1
         return logits
