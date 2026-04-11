@@ -4,10 +4,10 @@ Nepali TTS inference script using a custom checkpoint.
 
 Usage:
     python3 test_nepali.py \
-      --checkpoint results/t3_mtl_nepali_final.safetensors \
+      --checkpoint results/t3_nepali_epoch_45.pt \
       --ref_audio samples/ref.wav \
       --text "नमस्ते, म टेलभोक्सको आवाज बोल्दै छु। टेलभोक्सले तपाईंको व्यवसायको लागि स्मार्ट, प्राविधिक र भरपर्दो समाधान ल्याउँछ।" \
-      --output output_audio/test_output7.wav
+      --output output_audio/test_output13.wav
 """
 import argparse
 import os

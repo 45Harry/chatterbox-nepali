@@ -121,7 +121,8 @@ class AlignmentStreamAnalyzer:
         # Hallucinations at the start of speech show up as activations at the bottom of the attention maps!
         # To mitigate this, we just wait until there are no activations far off-diagonal in the last 2 tokens,
         # and there are some strong activations in the first few tokens.
-        false_start = (not self.started) and (A[-2:, -2:].max() > 0.1 or A[:, :4].max() < 0.5)
+        # FIX for Nepali: Relaxed thresholds to reduce initial silence/delay
+        false_start = (not self.started) and (A[-2:, -2:].max() > 0.15 or A[:, :4].max() < 0.35)
         self.started = not false_start
         if self.started and self.started_at is None:
             self.started_at = T
@@ -149,11 +150,11 @@ class AlignmentStreamAnalyzer:
             else:
                 token_id = next_token
             self.generated_tokens.append(token_id)
-            
+
             # Keep only last 20 tokens to prevent memory issues
             if len(self.generated_tokens) > 20:
                 self.generated_tokens = self.generated_tokens[-20:]
-            
+
         # Check for excessive token repetition (15x same token in a row)
         # 15 tokens at 25Hz = ~600ms of a single robotic continuous tone.
         token_repetition = (
