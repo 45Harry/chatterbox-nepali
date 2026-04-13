@@ -13,6 +13,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LinearLR
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import librosa
 import numpy as np
@@ -121,6 +122,12 @@ def collate_fn(batch):
 
 def train(args):
     device = torch.device(args.device)
+
+    # TensorBoard writer
+    tb_log_dir = f"runs/nepali_tts_{Path(args.manifest).stem}"
+    tb_writer = SummaryWriter(tb_log_dir)
+    print(f"📊 TensorBoard logs at: {tb_log_dir}")
+    print(f"   Run: tensorboard --logdir=runs")
     
     # Load pretrained components
     if args.ckpt_dir:
@@ -192,6 +199,7 @@ def train(args):
             print(f"⏩ Setting internal loop iterator to start at Epoch {start_epoch}")
             
     for epoch in range(start_epoch, args.epochs):
+        losses = []
         pbar = tqdm(dataloader, desc=f"Epoch {epoch}")
         optimizer.zero_grad(set_to_none=True)
         for i, batch in enumerate(pbar):
@@ -228,12 +236,26 @@ def train(args):
                 optimizer.zero_grad(set_to_none=True)
             
             pbar.set_postfix({"loss": loss.item() * args.accum_steps, "loss_speech": loss_speech.item()})
+
+            # Track for epoch summary
+            losses.append(loss.item() * args.accum_steps)
+
+            # TensorBoard logging (per-step)
+            global_step = epoch * len(dataloader) + i
+            tb_writer.add_scalar("train/loss", loss.item() * args.accum_steps, global_step)
+            tb_writer.add_scalar("train/loss_text", loss_text.item(), global_step)
+            tb_writer.add_scalar("train/loss_speech", loss_speech.item(), global_step)
             
             # Memory Fixes for M2 Max
             del loss, loss_text, loss_speech, t3_cond
             if i % 10 == 0 and device.type == "mps":
                 torch.mps.empty_cache()
             
+        # Epoch summary
+        avg_loss = sum(losses) / len(losses) if losses else float('inf')
+        tb_writer.add_scalar("epoch/avg_loss", avg_loss, epoch)
+        print(f"📈 Epoch {epoch} complete — avg loss: {avg_loss:.4f}")
+
         # Save checkpoint (skip validation sample generation to avoid CUDA crashes)
         if epoch % args.save_every == 0:
             os.makedirs("results", exist_ok=True)
@@ -246,6 +268,8 @@ def train(args):
     os.makedirs("results", exist_ok=True)
     save_file(final_sd, "results/t3_mtl_nepali_final.safetensors")
     print("Training finished. Saved to results/t3_mtl_nepali_final.safetensors")
+
+    tb_writer.close()
 
 if __name__ == "__main__":
     def get_default_device():
