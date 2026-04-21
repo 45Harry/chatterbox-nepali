@@ -167,6 +167,18 @@ class VoiceAgentOptimized:
 
         return deduped
 
+    def _force_small_first_chunk(self, chunks, max_words=6):
+        """Create a tiny first chunk for faster TTF."""
+        if not chunks:
+            return chunks
+        first_words = chunks[0].split()
+        if len(first_words) <= max_words:
+            return chunks
+        head = " ".join(first_words[:max_words]).strip()
+        tail = " ".join(first_words[max_words:]).strip()
+        rem = [tail] + chunks[1:] if tail else chunks[1:]
+        return [head] + rem
+
     def _ensure_conditionals(self, ref_audio, exaggeration):
         if ref_audio:
             if self.active_ref_audio != ref_audio or self.model.conds is None:
@@ -183,7 +195,7 @@ class VoiceAgentOptimized:
         return None
 
     def generate_speech_stream(self, text, ref_audio=None, exaggeration=0.5, 
-                              temperature=0.8, top_p=0.95, rep_pen=1.1):
+                              temperature=0.8, top_p=0.95, rep_pen=1.1, ultra_low_latency=False):
         """Yield partial audio so playback can start before full synthesis finishes."""
         start = time.time()
         cond_error = self._ensure_conditionals(ref_audio, exaggeration)
@@ -194,6 +206,8 @@ class VoiceAgentOptimized:
         with torch.inference_mode():
             try:
                 chunks = self._split_text_chunks(text, max_chunk_chars=60)
+                if ultra_low_latency:
+                    chunks = self._force_small_first_chunk(chunks, max_words=6)
                 if not chunks:
                     yield None, "❌ Error: Empty text", self.get_stats()
                     return
@@ -201,14 +215,21 @@ class VoiceAgentOptimized:
                 audio_chunks = []
                 first_chunk_latency_ms = None
                 for idx, chunk in enumerate(chunks):
-                    chunk_tokens = min(180, max(60, int(len(chunk) * 2.6)))
+                    if ultra_low_latency and idx == 0:
+                        chunk_tokens = min(48, max(26, int(len(chunk) * 1.4)))
+                        chunk_temp = min(temperature, 0.45)
+                        chunk_top_p = min(top_p, 0.72)
+                    else:
+                        chunk_tokens = min(180, max(60, int(len(chunk) * 2.6)))
+                        chunk_temp = temperature
+                        chunk_top_p = top_p
                     wav = self.model.generate(
                         text=chunk,
                         language_id="ne",
                         audio_prompt_path=None,
                         exaggeration=exaggeration,
-                        temperature=temperature,
-                        top_p=top_p,
+                        temperature=chunk_temp,
+                        top_p=chunk_top_p,
                         repetition_penalty=max(1.2, rep_pen),
                         cfg_weight=0.5,
                         max_new_tokens=chunk_tokens,
@@ -220,7 +241,8 @@ class VoiceAgentOptimized:
                     elapsed_ms = (time.time() - start) * 1000
                     yield (
                         (self.model.sr, partial_audio),
-                        f"⏳ TTF {first_chunk_latency_ms:.1f}ms | Elapsed {elapsed_ms:.1f}ms | Chunk {idx + 1}/{len(chunks)}",
+                        f"⏳ TTF {first_chunk_latency_ms:.1f}ms | Elapsed {elapsed_ms:.1f}ms | Chunk {idx + 1}/{len(chunks)}"
+                        + (" | Ultra" if ultra_low_latency else ""),
                         self.get_stats(),
                     )
 
@@ -292,6 +314,7 @@ with gr.Blocks(title="🎤 Nepali Voice Agent - Optimized") as demo:
             with gr.Row():
                 top_p = gr.Slider(0.0, 1.0, value=0.85, label="Top-P")
                 rep_pen = gr.Slider(1.0, 2.0, value=1.25, label="Rep. Penalty")
+            ultra_mode = gr.Checkbox(value=True, label="Ultra Low Latency (faster first chunk)")
             
             generate_btn = gr.Button("🎵 Generate Speech", variant="primary", size="lg")
             
@@ -302,13 +325,15 @@ with gr.Blocks(title="🎤 Nepali Voice Agent - Optimized") as demo:
             gr.Markdown("### 📊 Performance Stats")
             stats_output = gr.JSON(label="Inference Statistics")
 
-    def on_generate(text, ref_audio, exaggeration, temperature, top_p, rep_pen):
+    def on_generate(text, ref_audio, exaggeration, temperature, top_p, rep_pen, ultra_mode):
         """Stream partial audio chunks with latency tracking"""
         if not text.strip():
             yield None, "❌ Error: Empty text", {}
             return
 
-        for event in agent.generate_speech_stream(text, ref_audio, exaggeration, temperature, top_p, rep_pen):
+        for event in agent.generate_speech_stream(
+            text, ref_audio, exaggeration, temperature, top_p, rep_pen, ultra_mode
+        ):
             if len(event) == 3:
                 yield event
             else:
@@ -324,7 +349,7 @@ with gr.Blocks(title="🎤 Nepali Voice Agent - Optimized") as demo:
     
     generate_btn.click(
         fn=on_generate,
-        inputs=[input_text, ref_audio, exaggeration, temperature, top_p, rep_pen],
+        inputs=[input_text, ref_audio, exaggeration, temperature, top_p, rep_pen, ultra_mode],
         outputs=[audio_output, latency_output, stats_output]
     )
 
@@ -337,4 +362,4 @@ if __name__ == "__main__":
     print(f"Target Latency: <300ms")
     print("="*70 + "\n")
     
-    demo.launch(share=False)
+    demo.launch(share=True)

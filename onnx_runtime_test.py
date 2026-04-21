@@ -2,18 +2,13 @@
 """
 Export the T3 transformer and speech-head to ONNX and validate them with ONNX Runtime.
 """
-import os
 import time
+import argparse
 from pathlib import Path
 
 import torch
 import onnxruntime as ort
 from src.chatterbox.mtl_tts import ChatterboxMultilingualTTS
-
-MODEL_DIR = Path("quantized_fp16")
-ONNX_DIR = Path("onnx_models")
-ONNX_DIR.mkdir(exist_ok=True)
-
 
 def export_t3_transformer(model: ChatterboxMultilingualTTS, output_path: Path) -> bool:
     print(f"Exporting T3 transformer to ONNX: {output_path}")
@@ -65,7 +60,9 @@ def export_speech_head(model: ChatterboxMultilingualTTS, output_path: Path):
 
 def verify_onnx_session(model: ChatterboxMultilingualTTS, model_path: Path, input_tensor: torch.Tensor):
     print(f"Loading ONNX model: {model_path}")
-    sess = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
+    providers = resolve_providers()
+    print(f"  providers: {providers}")
+    sess = ort.InferenceSession(str(model_path), providers=providers)
     input_name = sess.get_inputs()[0].name
     output_names = [o.name for o in sess.get_outputs()]
     print(f"  inputs: {input_name}, outputs: {output_names}")
@@ -78,17 +75,72 @@ def verify_onnx_session(model: ChatterboxMultilingualTTS, model_path: Path, inpu
     return outputs
 
 
-def main():
-    print("=== ONNX Runtime Experiment ===")
-    if not MODEL_DIR.exists():
-        raise FileNotFoundError(f"Model directory not found: {MODEL_DIR}")
+def resolve_providers():
+    available = ort.get_available_providers()
+    if "CUDAExecutionProvider" in available:
+        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    return ["CPUExecutionProvider"]
 
-    print(f"Loading model from {MODEL_DIR} on CPU...")
-    model = ChatterboxMultilingualTTS.from_local(str(MODEL_DIR), "cpu")
+
+def bench_speech_head(model: ChatterboxMultilingualTTS, onnx_path: Path, loops: int = 50):
+    print("\nBenchmarking speech-head (PyTorch vs ONNX Runtime)...")
+    model.t3.speech_head.eval()
+    providers = resolve_providers()
+    sess = ort.InferenceSession(str(onnx_path), providers=providers)
+    input_name = sess.get_inputs()[0].name
+    input_shape = sess.get_inputs()[0].shape
+
+    bsz = 1 if input_shape[0] in (None, "batch") else int(input_shape[0])
+    seq_len = 16 if input_shape[1] in (None, "sequence", "seq_len") else int(input_shape[1])
+    in_features = model.t3.speech_head.in_features
+    x = torch.randn(bsz, seq_len, in_features, dtype=torch.float32)
+    x_np = x.numpy()
+
+    with torch.inference_mode():
+        for _ in range(5):
+            _ = model.t3.speech_head(x)
+    t0 = time.perf_counter()
+    with torch.inference_mode():
+        for _ in range(loops):
+            _ = model.t3.speech_head(x)
+    torch_ms = (time.perf_counter() - t0) * 1000 / loops
+
+    for _ in range(5):
+        _ = sess.run(None, {input_name: x_np})
+    t1 = time.perf_counter()
+    for _ in range(loops):
+        _ = sess.run(None, {input_name: x_np})
+    ort_ms = (time.perf_counter() - t1) * 1000 / loops
+
+    print(f"  PyTorch avg: {torch_ms:.3f} ms/iter")
+    print(f"  ONNX avg:    {ort_ms:.3f} ms/iter")
+    print(f"  ORT providers used: {providers}")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model-dir", type=Path, default=Path("quantized_fp16"))
+    parser.add_argument("--onnx-dir", type=Path, default=Path("onnx_models"))
+    parser.add_argument("--loops", type=int, default=50)
+    args = parser.parse_args()
+
+    model_dir = args.model_dir
+    onnx_dir = args.onnx_dir
+    onnx_dir.mkdir(exist_ok=True)
+
+    print("=== ONNX Runtime Experiment ===")
+    print(f"ONNX Runtime: {ort.__version__}")
+    print(f"Available providers: {ort.get_available_providers()}")
+    print(f"Selected providers: {resolve_providers()}")
+    if not model_dir.exists():
+        raise FileNotFoundError(f"Model directory not found: {model_dir}")
+
+    print(f"Loading model from {model_dir} on CPU...")
+    model = ChatterboxMultilingualTTS.from_local(str(model_dir), "cpu")
     print("  ✅ Model loaded")
 
-    t3_path = ONNX_DIR / "t3_tfmr.onnx"
-    speech_head_path = ONNX_DIR / "t3_speech_head.onnx"
+    t3_path = onnx_dir / "t3_tfmr.onnx"
+    speech_head_path = onnx_dir / "t3_speech_head.onnx"
 
     t3_exported = False
     if not t3_path.exists():
@@ -117,8 +169,10 @@ def main():
         dummy_hidden = torch.randn(1, seq_len, model.t3.speech_head.in_features, dtype=torch.float32)
         _ = verify_onnx_session(model, speech_head_path, dummy_hidden)
 
+    bench_speech_head(model, speech_head_path, loops=args.loops)
+
     print("\n✅ ONNX Runtime test complete")
-    print(f"ONNX files written to: {ONNX_DIR.absolute()}")
+    print(f"ONNX files written to: {onnx_dir.absolute()}")
 
 
 if __name__ == "__main__":
