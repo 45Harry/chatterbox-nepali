@@ -51,3 +51,9 @@ checkpoints/
 # Model checkpoints (hosted on Hugging Face)
 *.safetensors
 *.pt
+logs/
+.gradio/
+.github/
+.cache/
+__pycache__/
+
