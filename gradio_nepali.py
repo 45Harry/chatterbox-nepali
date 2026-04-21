@@ -8,7 +8,7 @@ from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 
 # Constants
 DEVICE = "mps" if torch.backends.mps.is_available() else ("cuda" if torch.cuda.is_available() else "cpu")
-CHECKPOINT = "results/t3_mtl_nepali_final.safetensors"
+CHECKPOINT = "quantized_4bit/t3_mtl23ls_v2.pt"
 
 def set_seed(seed: int):
     torch.manual_seed(seed)

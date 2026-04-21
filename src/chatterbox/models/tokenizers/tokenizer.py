@@ -1,5 +1,6 @@
 import logging
 import json
+import os
 
 import torch
 from pathlib import Path
@@ -165,13 +166,20 @@ class ChineseCangjieConverter:
         self._init_segmenter()
     
     def _load_cangjie_mapping(self, model_dir=None):
-        """Load Cangjie mapping from HuggingFace model repository."""        
+        """Load Cangjie mapping from local model directory or HuggingFace cache/repo."""
         try:
-            cangjie_file = hf_hub_download(
-                repo_id=REPO_ID,
-                filename="Cangjie5_TC.json",
-                cache_dir=model_dir
-            )
+            cangjie_file = None
+            if model_dir is not None:
+                local_file = Path(model_dir) / "Cangjie5_TC.json"
+                if local_file.exists():
+                    cangjie_file = local_file
+
+            if cangjie_file is None:
+                cangjie_file = hf_hub_download(
+                    repo_id=REPO_ID,
+                    filename="Cangjie5_TC.json",
+                    cache_dir=model_dir
+                )
             
             with open(cangjie_file, "r", encoding="utf-8") as fp:
                 data = json.load(fp)
@@ -191,9 +199,19 @@ class ChineseCangjieConverter:
         """Initialize pkuseg segmenter."""
         try:
             from spacy_pkuseg import pkuseg
-            self.segmenter = pkuseg()
+            try:
+                self.segmenter = pkuseg()
+            except PermissionError:
+                # Some sandboxed/home-restricted environments cannot write to default ~/.pkuseg.
+                fallback_home = Path.cwd() / ".cache" / "pkuseg"
+                fallback_home.mkdir(parents=True, exist_ok=True)
+                os.environ["PKUSEG_HOME"] = str(fallback_home)
+                self.segmenter = pkuseg()
         except ImportError:
             logger.warning("pkuseg not available - Chinese segmentation will be skipped")
+            self.segmenter = None
+        except Exception as e:
+            logger.warning(f"pkuseg init failed ({e}) - Chinese segmentation will be skipped")
             self.segmenter = None
     
     def _cangjie_encode(self, glyph: str):

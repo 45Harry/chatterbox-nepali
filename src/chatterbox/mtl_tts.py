@@ -175,11 +175,35 @@ class ChatterboxMultilingualTTS:
         ve.to(device).eval()
 
         t3 = T3(T3Config.multilingual())
-        t3_state = load_safetensors(ckpt_dir / "t3_mtl23ls_v2.safetensors")
-        if "model" in t3_state.keys():
-            t3_state = t3_state["model"][0]
+        t3_ckpt_path = ckpt_dir / "t3_mtl23ls_v2.safetensors"
+        if t3_ckpt_path.exists():
+            t3_state = load_safetensors(t3_ckpt_path)
+            if "model" in t3_state.keys():
+                t3_state = t3_state["model"][0]
+        else:
+            t3_ckpt_path = ckpt_dir / "t3_mtl23ls_v2.pt"
+            if not t3_ckpt_path.exists():
+                raise FileNotFoundError(f"Neither .safetensors nor .pt model file found in {ckpt_dir}")
+            
+            t3_state = torch.load(t3_ckpt_path, map_location=map_location, weights_only=True)
+            
+            # Check if this is a quantized model with metadata that can't be loaded directly
+            # Quantized models have keys like "scale", "zero_point", "_packed_params"
+            is_quantized = any(key.endswith(('.scale', '.zero_point')) or '_packed_params' in key 
+                              for key in t3_state.keys())
+            if is_quantized:
+                raise RuntimeError(
+                    f"Quantized model at {t3_ckpt_path} contains torch.quantization metadata "
+                    "that requires special handling. Please use a non-quantized model or "
+                    "re-quantize with weights saved in compatible format (e.g., .safetensors)."
+                )
             
         # Handle vocabulary size mismatch (e.g. when adding new language tokens)
+        if "text_emb.weight" not in t3_state:
+            # Likely a wrapped state dict, try to extract it
+            if "model" in t3_state and isinstance(t3_state["model"], dict):
+                t3_state = t3_state["model"]
+        
         state_vocab_size = t3_state["text_emb.weight"].shape[0]
         model_vocab_size = t3.hp.text_tokens_dict_size
         if state_vocab_size != model_vocab_size:
@@ -270,6 +294,7 @@ class ChatterboxMultilingualTTS:
         repetition_penalty=2.0,
         min_p=0.05,
         top_p=1.0,
+        max_new_tokens=1000,
     ):
         # Validate language_id
         if language_id and language_id.lower() not in SUPPORTED_LANGUAGES:
@@ -307,7 +332,7 @@ class ChatterboxMultilingualTTS:
             speech_tokens = self.t3.inference(
                 t3_cond=self.conds.t3,
                 text_tokens=text_tokens,
-                max_new_tokens=1000,  # TODO: use the value in config
+                max_new_tokens=max_new_tokens,  # Use parameter instead of hardcoded value
                 temperature=temperature,
                 cfg_weight=cfg_weight,
                 repetition_penalty=repetition_penalty,
