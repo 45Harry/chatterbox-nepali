@@ -39,6 +39,7 @@ class VoiceAgentOptimized:
         self.model = None
         self.latency_history = deque(maxlen=100)
         self.default_ref_audio = self._resolve_default_ref_audio()
+        self.active_ref_audio = None
         self.load_model(model_path)
 
     def _resolve_default_ref_audio(self):
@@ -65,6 +66,12 @@ class VoiceAgentOptimized:
         # Set to eval mode and disable gradients (critical for inference speed)
         self.model.t3.eval()
         self.model.s3gen.eval()
+
+        # Precompute conditionals once to avoid re-encoding reference audio every request.
+        if self.model.conds is None and self.default_ref_audio:
+            print(f"🎙️ Precomputing default voice conditionals from {self.default_ref_audio} ...")
+            self.model.prepare_conditionals(self.default_ref_audio, exaggeration=0.5)
+            self.active_ref_audio = self.default_ref_audio
         
         # Warm up GPU kernels with dummy forward passes
         print("⚡ Warming up GPU kernels...")
@@ -91,23 +98,27 @@ class VoiceAgentOptimized:
                        temperature=0.8, top_p=0.95, rep_pen=1.1):
         """Generate speech with latency tracking"""
         start = time.time()
-        effective_ref_audio = ref_audio
-        if not effective_ref_audio and self.model.conds is None:
-            effective_ref_audio = self.default_ref_audio
-            if not effective_ref_audio:
+        if ref_audio:
+            if self.active_ref_audio != ref_audio or self.model.conds is None:
+                self.model.prepare_conditionals(ref_audio, exaggeration=exaggeration)
+                self.active_ref_audio = ref_audio
+        elif self.model.conds is None:
+            if not self.default_ref_audio:
                 return None, (
                     "Please upload reference audio (voice cloning input). "
                     "No built-in conds.pt or default sample reference was found."
                 )
+            self.model.prepare_conditionals(self.default_ref_audio, exaggeration=exaggeration)
+            self.active_ref_audio = self.default_ref_audio
         
         with torch.inference_mode():
             try:
-                # Prevent over-generation: bound token budget to text length.
-                max_new_tokens = min(280, max(90, int(len(text.strip()) * 2.2)))
+                # Keep full sentences while still bounding runaway generation.
+                max_new_tokens = min(260, max(80, int(len(text.strip()) * 2.4)))
                 wav = self.model.generate(
                     text=text,
                     language_id="ne",
-                    audio_prompt_path=effective_ref_audio,
+                    audio_prompt_path=None,
                     exaggeration=exaggeration,
                     temperature=temperature,
                     top_p=top_p,
@@ -148,6 +159,8 @@ class VoiceAgentOptimized:
 
 # Initialize agent
 print(f"Initializing Voice Agent (Device: {DEVICE})")
+if DEVICE != "cuda":
+    print("⚠️ CUDA not detected. Sub-300ms target is typically not achievable on CPU.")
 agent = VoiceAgentOptimized(MODEL_PATH, DEVICE)
 
 # Build UI
